@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8
+
+      - name: Cache mise
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/mise
+          key: ${{ runner.os }}-mise-${{ hashFiles('**/mise.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-mise-
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+  check:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [frontend, backend]
+        include:
+          - project: frontend
+            command: cd frontend && bun run check
+          - project: backend
+            command: cd backend && cargo fmt --check && cargo clippy -- -D warnings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8
+
+      - name: Install bun dependencies
+        if: matrix.project == 'frontend'
+        run: cd frontend && bun install
+
+      - name: Restore mise cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/share/mise
+          key: ${{ runner.os }}-mise-${{ hashFiles('**/mise.toml') }}
+
+      - name: Restore frontend cache
+        if: matrix.project == 'frontend'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/bun.lock') }}
+
+      - name: Restore Rust cache
+        if: matrix.project == 'backend'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+
+      - name: Run ${{ matrix.project }} check
+        run: ${{ matrix.command }}
+
+  build:
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8
+
+      - name: Restore mise cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/share/mise
+          key: ${{ runner.os }}-mise-${{ hashFiles('**/mise.toml') }}
+
+      - name: Restore frontend cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/bun.lock') }}
+
+      - name: Restore Rust cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+
+      - name: Build
+        run: task build

@@ -1,0 +1,82 @@
+version: '3'
+
+vars:
+  FRONTEND_DIR: frontend
+  BACKEND_DIR: backend
+  STATIC_DIR: '{{.BACKEND_DIR}}/static'
+
+tasks:
+  default:
+    deps: [build]
+
+  clean:
+    cmds:
+      - rm -rf {{.FRONTEND_DIR}}/dist
+      - rm -rf {{.STATIC_DIR}}
+      - cd {{.BACKEND_DIR}} && cargo clean
+
+  install-frontend:
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun install
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/**/*
+
+  build-frontend:
+    dir: '{{.FRONTEND_DIR}}'
+    deps: [install-frontend]
+    cmds:
+      - bun run build
+    sources:
+      - src/**/*
+      - index.html
+      - vite.config.ts
+      - tsconfig.json
+      - unocss.config.ts
+      - biome.json
+      - package.json
+      - bun.lock
+    generates:
+      - dist/**/*
+
+  copy-frontend:
+    deps: [build-frontend]
+    cmds:
+      - mkdir -p {{.STATIC_DIR}}
+      - cp -r {{.FRONTEND_DIR}}/dist/* {{.STATIC_DIR}}/
+
+  build-backend:
+    dir: '{{.BACKEND_DIR}}'
+    deps: [copy-frontend]
+    cmds:
+      - cargo build --release
+    sources:
+      - src/**/*
+      - Cargo.toml
+      - Cargo.lock
+      - static/**/*
+    generates:
+      - target/release/backend
+
+  build:
+    deps: [build-backend]
+
+  dev-frontend:
+    dir: '{{.FRONTEND_DIR}}'
+    deps: [install-frontend]
+    cmds:
+      - bun run dev
+
+  dev-backend:
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - cargo watch -x run
+
+  run:
+    dir: '{{.BACKEND_DIR}}'
+    deps: [build]
+    cmds:
+      - ./target/release/backend
